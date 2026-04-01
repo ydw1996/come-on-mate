@@ -110,9 +110,35 @@ export interface LunchPick {
   date: string
   place_id: string
   recommended_by: string | null
+  companions: string[]
   created_at: string
   lunch_places?: LunchPlace
   profiles?: Pick<Profile, 'name'>
+}
+
+// 점심 장소 + 마지막 픽 날짜 (목록 조회 시)
+export interface LunchPlaceWithLastPick extends LunchPlace {
+  last_picked_at: string | null
+}
+
+// 통계 TOP5
+export interface LunchTop5Item {
+  place_id: string
+  name: string
+  cnt: number
+}
+
+// 네이버 지도 검색 결과
+export interface NaverPlace {
+  title: string
+  link: string
+  category: string
+  description: string
+  telephone: string
+  address: string
+  roadAddress: string
+  mapx: string
+  mapy: string
 }
 
 // 슬랙 요약
