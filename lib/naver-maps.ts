@@ -14,22 +14,38 @@ export interface NaverPlace {
   mapy: string
 }
 
-// 장소 검색
-export async function 장소검색(query: string, display = 10): Promise<NaverPlace[]> {
-  const url = `https://openapi.naver.com/v1/search/local.json?query=${encodeURIComponent(query)}&display=${display}&sort=comment`
+/**
+ * 장소 검색 — Naver Local Search API
+ * display 최대 5개/요청 (API 스펙 고정)
+ * pages 만큼 순차 페이지네이션 후 합산
+ */
+export async function 장소검색(
+  query: string,
+  display = 5,
+  pages = 1
+): Promise<NaverPlace[]> {
+  const results: NaverPlace[] = []
 
-  const res = await fetch(url, {
-    headers: {
-      'X-Naver-Client-Id': NAVER_CLIENT_ID,
-      'X-Naver-Client-Secret': NAVER_CLIENT_SECRET,
-    },
-    next: { revalidate: 60 * 60 }, // 1시간 캐시
-  })
+  for (let page = 0; page < pages; page++) {
+    const start = page * display + 1
+    const url = `https://openapi.naver.com/v1/search/local.json?query=${encodeURIComponent(query)}&display=${display}&start=${start}&sort=comment`
 
-  if (!res.ok) {
-    throw new Error('네이버 지도 API 호출 실패')
+    const res = await fetch(url, {
+      headers: {
+        'X-Naver-Client-Id': NAVER_CLIENT_ID,
+        'X-Naver-Client-Secret': NAVER_CLIENT_SECRET,
+      },
+      cache: 'no-store', // 항상 최신 결과
+    })
+
+    if (!res.ok) break
+
+    const data = await res.json()
+    const items: NaverPlace[] = data.items ?? []
+    results.push(...items)
+
+    if (items.length < display) break // 더 이상 결과 없음
   }
 
-  const data = await res.json()
-  return data.items as NaverPlace[]
+  return results
 }

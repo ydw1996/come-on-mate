@@ -1,7 +1,14 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  /* config options here */
+  images: {
+    remotePatterns: [
+      {
+        protocol: 'https',
+        hostname: '**.pstatic.net', // 네이버 이미지 CDN
+      },
+    ],
+  },
 };
 
 export default nextConfig;

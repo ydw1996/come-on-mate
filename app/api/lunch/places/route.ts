@@ -15,8 +15,37 @@ export async function GET(request: Request) {
 
   if (mode === 'search') {
     const query = searchParams.get('query') ?? '맛집'
+    const lat = searchParams.get('lat')
+    const lng = searchParams.get('lng')
+
     try {
-      const results = await 장소검색(query)
+      let results
+
+      if (lat && lng) {
+        // 동(suburb) + 구(city_district) + 일반 — 3개 쿼리 병렬, 중복 제거 후 최대 15개
+        const { dong, gu } = await reverseGeocode(parseFloat(lat), parseFloat(lng))
+        const queries = [
+          dong ? `${dong} ${query}` : null,
+          gu   ? `${gu} ${query}`   : null,
+          query,
+        ].filter((q): q is string => q !== null && q !== query || true)
+          // query 자체는 항상 포함, 중복 제거
+          .filter((q, i, arr) => arr.indexOf(q) === i)
+
+        const batches = await Promise.all(
+          queries.map((q) => 장소검색(q, 5, 3).catch(() => []))
+        )
+        const seen = new Set<string>()
+        results = batches.flat().filter((p) => {
+          const key = p.mapx + p.mapy
+          if (seen.has(key)) return false
+          seen.add(key)
+          return true
+        }).slice(0, 15)
+      } else {
+        results = await 장소검색(query, 5, 3)
+      }
+
       return NextResponse.json({ results })
     } catch (e) {
       const msg = e instanceof Error ? e.message : '네이버 검색 실패'
@@ -79,4 +108,20 @@ export async function POST(request: Request) {
   }
 
   return NextResponse.json(data, { status: 201 })
+}
+
+// Nominatim 역지오코딩 — 좌표 → 동(suburb) + 구(city_district)
+async function reverseGeocode(lat: number, lng: number): Promise<{ dong: string | null; gu: string | null }> {
+  try {
+    const res = await fetch(
+      `https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lng}&format=json`,
+      { headers: { 'User-Agent': 'come-on-mate/1.0 (internal tool)' }, cache: 'no-store' }
+    )
+    if (!res.ok) return { dong: null, gu: null }
+    const data = await res.json()
+    const { suburb, city_district } = (data.address ?? {}) as Record<string, string>
+    return { dong: suburb || null, gu: city_district || null }
+  } catch {
+    return { dong: null, gu: null }
+  }
 }
