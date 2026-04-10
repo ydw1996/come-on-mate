@@ -1,13 +1,7 @@
 import type { Metadata } from 'next'
-import { Geist } from 'next/font/google'
 import Script from 'next/script'
 import './globals.css'
 import { Providers } from '@/components/layout/Providers'
-
-const geist = Geist({
-  variable: '--font-geist-sans',
-  subsets: ['latin'],
-})
 
 export const metadata: Metadata = {
   title: 'Come On Mate',
@@ -20,7 +14,7 @@ export default function RootLayout({
   children: React.ReactNode
 }) {
   return (
-    <html lang="ko" className={`${geist.variable} h-full antialiased`}>
+    <html lang="ko" className="h-full antialiased">
       <body className="h-full">
         <Script
           src={`https://oapi.map.naver.com/openapi/v3/maps.js?ncpKeyId=${process.env.NEXT_PUBLIC_NAVER_CLIENT_ID}`}

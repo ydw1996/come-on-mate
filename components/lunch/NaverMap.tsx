@@ -9,45 +9,19 @@ interface Props {
   className?: string
 }
 
-declare global {
-  interface Window {
-    naver: {
-      maps: {
-        Map: new (el: HTMLElement, opts: object) => NaverMapInstance
-        Marker: new (opts: object) => object
-        LatLng: new (lat: number, lng: number) => object
-        InfoWindow: new (opts: object) => NaverInfoWindow
-      }
-    }
-  }
-}
-
-interface NaverMapInstance {
-  destroy(): void
-}
-
-interface NaverInfoWindow {
-  open(map: NaverMapInstance, marker: object): void
-}
-
 function waitForNaver(): Promise<void> {
   return new Promise((resolve) => {
-    if (window.naver?.maps) {
-      resolve()
-      return
-    }
+    if (window.naver?.maps) { resolve(); return }
     const interval = setInterval(() => {
-      if (window.naver?.maps) {
-        clearInterval(interval)
-        resolve()
-      }
+      if (window.naver?.maps) { clearInterval(interval); resolve() }
     }, 100)
   })
 }
 
 export function NaverMap({ lat, lng, placeName, className }: Props) {
   const containerRef = useRef<HTMLDivElement>(null)
-  const mapRef = useRef<NaverMapInstance | null>(null)
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const mapRef = useRef<any>(null)
   const [ready, setReady] = useState(false)
 
   useEffect(() => {
@@ -56,27 +30,22 @@ export function NaverMap({ lat, lng, placeName, className }: Props) {
 
   useEffect(() => {
     if (!ready || !containerRef.current) return
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const nm = window.naver.maps as any
 
     mapRef.current?.destroy()
 
-    const position = new window.naver.maps.LatLng(lat, lng)
-
-    const map = new window.naver.maps.Map(containerRef.current, {
-      center: position,
-      zoom: 16,
-    })
+    const position = new nm.LatLng(lat, lng)
+    const map = new nm.Map(containerRef.current, { center: position, zoom: 16 })
     mapRef.current = map
 
-    const marker = new window.naver.maps.Marker({ position, map })
-
-    const infoWindow = new window.naver.maps.InfoWindow({
+    const marker = new nm.Marker({ position, map })
+    const infoWindow = new nm.InfoWindow({
       content: `<div style="padding:8px 12px;font-size:13px;font-weight:600;white-space:nowrap">${placeName}</div>`,
     })
     infoWindow.open(map, marker)
 
-    return () => {
-      mapRef.current?.destroy()
-    }
+    return () => { mapRef.current?.destroy() }
   }, [ready, lat, lng, placeName])
 
   return (

@@ -1,45 +1,25 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import type { MoraleEmployee } from '@/lib/google-sheets'
 
 interface Props {
+  employees: MoraleEmployee[]
   userName: string
 }
 
-// 현재 월 구하기 (예: "4월")
 function getCurrentMonth() {
   return `${new Date().getMonth() + 1}월`
 }
 
-export function MoraleSheet({ userName }: Props) {
+export function MoraleSheet({ employees, userName }: Props) {
   const [tab, setTab] = useState<'mine' | 'all'>('mine')
-  const [employees, setEmployees] = useState<MoraleEmployee[]>([])
-  const [loading, setLoading] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-
-  useEffect(() => {
-    setLoading(true)
-    setError(null)
-
-    const params = tab === 'mine' ? `?name=${encodeURIComponent(userName)}` : ''
-    fetch(`/api/morale/sheet${params}`)
-      .then((r) => r.json())
-      .then((data) => {
-        if (data.error) setError(data.error)
-        else setEmployees(data.employees ?? [])
-      })
-      .catch(() => setError('데이터를 불러오지 못했습니다.'))
-      .finally(() => setLoading(false))
-  }, [tab, userName])
 
   const thisMonth = getCurrentMonth()
-
-  // "내 사기진작비" 뷰 — 월별 상세
-  const myData = employees[0]
+  const myData = employees.find((e) => e.이름 === userName)
   const myThisMonth = myData?.월별.find((m) => m.월 === thisMonth)
 
   return (
@@ -62,11 +42,7 @@ export function MoraleSheet({ userName }: Props) {
         </Button>
       </div>
 
-      {loading ? (
-        <div className="py-16 text-center text-sm text-muted-foreground">불러오는 중...</div>
-      ) : error ? (
-        <div className="py-16 text-center text-sm text-destructive">{error}</div>
-      ) : tab === 'mine' ? (
+      {tab === 'mine' ? (
         <MyView data={myData} thisMonth={thisMonth} thisMonthData={myThisMonth} />
       ) : (
         <AllView employees={employees} thisMonth={thisMonth} />
@@ -95,7 +71,6 @@ function MyView({
 
   return (
     <div className="space-y-4">
-      {/* 이번달 요약 카드 */}
       <div className="grid grid-cols-3 gap-4">
         <Card>
           <CardHeader className="pb-1">
@@ -127,7 +102,6 @@ function MyView({
         </Card>
       </div>
 
-      {/* 월별 상세 */}
       <Card>
         <CardHeader className="pb-2">
           <CardTitle className="text-sm">월별 내역</CardTitle>
@@ -150,9 +124,7 @@ function MyView({
                   <td className="px-4 py-3">
                     {m.월}
                     {m.월 === thisMonth && (
-                      <Badge variant="secondary" className="ml-2 text-xs">
-                        이번달
-                      </Badge>
+                      <Badge variant="secondary" className="ml-2 text-xs">이번달</Badge>
                     )}
                   </td>
                   <td className="px-4 py-3 text-right">
@@ -194,12 +166,8 @@ function AllView({
               <tr className="border-b bg-muted/50">
                 <th className="px-4 py-3 text-left font-medium text-muted-foreground">NO</th>
                 <th className="px-4 py-3 text-left font-medium text-muted-foreground">직원명</th>
-                <th className="px-4 py-3 text-right font-medium text-muted-foreground">
-                  {thisMonth} 사용
-                </th>
-                <th className="px-4 py-3 text-right font-medium text-muted-foreground">
-                  {thisMonth} 잔여
-                </th>
+                <th className="px-4 py-3 text-right font-medium text-muted-foreground">{thisMonth} 사용</th>
+                <th className="px-4 py-3 text-right font-medium text-muted-foreground">{thisMonth} 잔여</th>
                 <th className="px-4 py-3 text-right font-medium text-muted-foreground">합계</th>
               </tr>
             </thead>

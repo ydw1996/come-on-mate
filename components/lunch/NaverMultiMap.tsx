@@ -10,18 +10,16 @@ export interface MarkerData {
 }
 
 export interface TempMarker {
-  id: string // mapx + ',' + mapy
+  id: string
   lat: number
   lng: number
   name: string
   category?: string
   address?: string
   naverLink?: string
-  /** 카테고리 마커용 커스텀 HTML (80px 컨테이너 기준, anchor Point(40,18)) */
   markerContent?: string
 }
 
-/** 이름·좌표로 네이버 지도 검색 URL 생성 */
 export function naverMapsUrl(name: string, lat?: number, lng?: number): string {
   const base = `https://map.naver.com/p/search/${encodeURIComponent(name)}`
   if (lat && lng) return `${base}?c=${lng},${lat},15,0,0,0,dh`
@@ -57,9 +55,7 @@ declare global {
         Marker: new (opts: object) => NaverMarker
         LatLng: new (lat: number, lng: number) => object
         InfoWindow: new (opts: object) => NaverInfoWindow
-        Event: {
-          addListener(target: object, eventName: string, handler: () => void): void
-        }
+        Event: { addListener(target: object, eventName: string, handler: () => void): void }
       }
     }
   }
@@ -72,6 +68,64 @@ function waitForNaver(): Promise<void> {
       if (window.naver?.maps) { clearInterval(interval); resolve() }
     }, 100)
   })
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function makeRegisteredIcon(nm: any, name: string, selected: boolean) {
+  const label = name.length > 9 ? name.slice(0, 8) + '…' : name
+  if (selected) {
+    return {
+      content: [
+        `<div style="width:160px;text-align:center;cursor:pointer;filter:drop-shadow(0 2px 8px rgba(0,0,0,.35))">`,
+        `<div style="width:52px;height:52px;background:#fef9c3;border:3px solid #eab308;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:28px;margin:0 auto;box-shadow:0 0 0 3px rgba(234,179,8,.25)">⭐</div>`,
+        `<div style="background:#eab308;color:white;border-radius:6px;padding:4px 10px;font-size:12px;font-weight:700;margin-top:4px;white-space:nowrap;display:inline-block;line-height:1.4;box-shadow:0 2px 6px rgba(0,0,0,.2)">${name}</div>`,
+        `<div style="width:0;height:0;border-left:8px solid transparent;border-right:8px solid transparent;border-top:10px solid #eab308;margin:0 auto"></div>`,
+        `</div>`,
+      ].join(''),
+      anchor: new nm.Point(80, 91),
+    }
+  }
+  return {
+    content: [
+      `<div style="width:80px;text-align:center;cursor:pointer">`,
+      `<div style="width:36px;height:36px;background:#fef9c3;border:2.5px solid #eab308;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:18px;box-shadow:0 2px 8px rgba(0,0,0,.28);margin:0 auto">⭐</div>`,
+      `<div style="background:white;border:1px solid #e5e7eb;border-radius:4px;padding:2px 4px;font-size:10px;font-weight:700;margin-top:3px;box-shadow:0 1px 3px rgba(0,0,0,.15);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:#111;max-width:80px">${label}</div>`,
+      `</div>`,
+    ].join(''),
+    anchor: new nm.Point(40, 18),
+  }
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function makeTempIcon(nm: any, m: TempMarker, selected: boolean) {
+  if (m.markerContent) {
+    if (selected) {
+      const emoji = m.markerContent.match(/font-size:18px[^>]*>([^<]+)<\/div>/)?.[1] ?? '🍽️'
+      return {
+        content: [
+          `<div style="width:160px;text-align:center;cursor:pointer;filter:drop-shadow(0 2px 8px rgba(0,0,0,.35))">`,
+          `<div style="width:52px;height:52px;background:white;border:3px solid #f97316;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:28px;margin:0 auto;box-shadow:0 0 0 3px rgba(249,115,22,.25)">`,
+          emoji,
+          `</div>`,
+          `<div style="background:#f97316;color:white;border-radius:6px;padding:4px 10px;font-size:12px;font-weight:700;margin-top:4px;white-space:nowrap;display:inline-block;line-height:1.4;box-shadow:0 2px 6px rgba(0,0,0,.2)">${m.name}</div>`,
+          `<div style="width:0;height:0;border-left:8px solid transparent;border-right:8px solid transparent;border-top:10px solid #f97316;margin:0 auto"></div>`,
+          `</div>`,
+        ].join(''),
+        anchor: new nm.Point(80, 91),
+      }
+    }
+    return { content: m.markerContent, anchor: new nm.Point(40, 18) }
+  }
+  if (selected) {
+    return {
+      content: '<div style="width:20px;height:20px;background:#f97316;border:3px solid #fff;border-radius:50%;box-shadow:0 2px 8px rgba(249,115,22,.7)"></div>',
+      anchor: new nm.Point(10, 10),
+    }
+  }
+  return {
+    content: '<div style="width:14px;height:14px;background:#f97316;border:2.5px solid #fff;border-radius:50%;box-shadow:0 1px 4px rgba(0,0,0,.4)"></div>',
+    anchor: new nm.Point(7, 7),
+  }
 }
 
 interface Props {
@@ -97,8 +151,8 @@ export function NaverMultiMap({
 }: Props) {
   const containerRef = useRef<HTMLDivElement>(null)
   const mapRef = useRef<NaverMapInstance | null>(null)
-  const markerListRef = useRef<{ id: string; marker: NaverMarker }[]>([])
-  const tempMarkerListRef = useRef<{ id: string; marker: NaverMarker }[]>([])
+  const markerListRef = useRef<{ id: string; marker: NaverMarker; data: MarkerData }[]>([])
+  const tempMarkerListRef = useRef<{ id: string; marker: NaverMarker; data: TempMarker }[]>([])
   const infoWindowRef = useRef<NaverInfoWindow | null>(null)
   const onMarkerClickRef = useRef(onMarkerClick)
   const onTempMarkerClickRef = useRef(onTempMarkerClick)
@@ -122,18 +176,11 @@ export function NaverMultiMap({
   // 지도 초기화
   useEffect(() => {
     if (!ready || !containerRef.current) return
-
-    const center =
-      markers.length > 0
-        ? new window.naver.maps.LatLng(markers[0].lat, markers[0].lng)
-        : new window.naver.maps.LatLng(37.5665, 126.978)
-
-    mapRef.current = new window.naver.maps.Map(containerRef.current, {
-      center,
-      zoom: 15,
-    })
+    const center = markers.length > 0
+      ? new window.naver.maps.LatLng(markers[0].lat, markers[0].lng)
+      : new window.naver.maps.LatLng(37.5665, 126.978)
+    mapRef.current = new window.naver.maps.Map(containerRef.current, { center, zoom: 15 })
     infoWindowRef.current = new window.naver.maps.InfoWindow({ content: '' })
-
     return () => {
       markerListRef.current.forEach(({ marker }) => marker.setMap(null))
       markerListRef.current = []
@@ -144,96 +191,76 @@ export function NaverMultiMap({
     }
   }, [ready]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // 등록된 식당 마커 동기화 — 변경 시 말풍선 닫기
+  // 등록된 식당 마커 동기화
   useEffect(() => {
     if (!ready || !mapRef.current) return
-
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const nm = window.naver.maps as any
     markerListRef.current.forEach(({ marker }) => marker.setMap(null))
     markerListRef.current = []
     infoWindowRef.current?.close()
-
     markers.forEach((m) => {
-      const pos = new window.naver.maps.LatLng(m.lat, m.lng)
-      const marker = new window.naver.maps.Marker({ position: pos, map: mapRef.current! })
-      window.naver.maps.Event.addListener(marker, 'click', () => {
-        onMarkerClickRef.current?.(m.id)
-        infoWindowRef.current?.setContent(
-          `<div style="padding:8px 12px;font-size:13px;font-weight:600;white-space:nowrap">${m.name}</div>`
-        )
-        infoWindowRef.current?.open(mapRef.current!, marker)
-      })
-      markerListRef.current.push({ id: m.id, marker })
+      const pos = new nm.LatLng(m.lat, m.lng)
+      const icon = makeRegisteredIcon(nm, m.name, false)
+      const marker = new nm.Marker({ position: pos, map: mapRef.current!, icon, zIndex: 1 })
+      nm.Event.addListener(marker, 'click', () => onMarkerClickRef.current?.(m.id))
+      markerListRef.current.push({ id: m.id, marker, data: m })
     })
   }, [ready, markers])
 
-  // 임시 마커 동기화 (검색·카테고리 결과) — 주황 점
+  // 임시 마커 동기화
   useEffect(() => {
     if (!ready || !mapRef.current) return
-
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const nm = window.naver.maps as any
     tempMarkerListRef.current.forEach(({ marker }) => marker.setMap(null))
     tempMarkerListRef.current = []
-
     tempMarkers.forEach((m) => {
-      const pos = new window.naver.maps.LatLng(m.lat, m.lng)
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const nm = window.naver.maps as any
-      const icon = m.markerContent
-        ? { content: m.markerContent, anchor: new nm.Point(40, 18) }
-        : {
-            content:
-              '<div style="width:14px;height:14px;background:#f97316;border:2.5px solid #fff;border-radius:50%;box-shadow:0 1px 4px rgba(0,0,0,.4)"></div>',
-            anchor: new nm.Point(7, 7),
-          }
-      const marker = new window.naver.maps.Marker({
-        position: pos,
-        map: mapRef.current!,
-        icon,
-      } as object)
-      window.naver.maps.Event.addListener(marker, 'click', () => {
-        onTempMarkerClickRef.current?.(m)
-        infoWindowRef.current?.setContent(
-          `<div style="padding:8px 12px;font-size:13px;font-weight:600;white-space:nowrap">${m.name}</div>`
-        )
-        infoWindowRef.current?.open(mapRef.current!, marker)
-      })
-      tempMarkerListRef.current.push({ id: m.id, marker })
+      const pos = new nm.LatLng(m.lat, m.lng)
+      const icon = makeTempIcon(nm, m, false)
+      const marker = new nm.Marker({ position: pos, map: mapRef.current!, icon, zIndex: 1 })
+      nm.Event.addListener(marker, 'click', () => onTempMarkerClickRef.current?.(m))
+      tempMarkerListRef.current.push({ id: m.id, marker, data: m })
     })
   }, [ready, tempMarkers])
 
-  // 등록된 식당 선택 → 이동
+  // 등록 식당 선택 → 마커 교체(강조) + 이동
   useEffect(() => {
-    if (!ready || !mapRef.current || !selectedId) return
+    if (!ready || !mapRef.current) return
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const nm = window.naver.maps as any
+    infoWindowRef.current?.close()
+    markerListRef.current.forEach((entry) => {
+      const selected = entry.id === selectedId
+      entry.marker.setMap(null)
+      const pos = new nm.LatLng(entry.data.lat, entry.data.lng)
+      const icon = makeRegisteredIcon(nm, entry.data.name, selected)
+      const newMarker = new nm.Marker({ position: pos, map: mapRef.current!, icon, zIndex: selected ? 1000 : 1 })
+      nm.Event.addListener(newMarker, 'click', () => onMarkerClickRef.current?.(entry.data.id))
+      entry.marker = newMarker
+    })
+    if (!selectedId) return
     const found = markers.find((m) => m.id === selectedId)
-    if (!found) return
-
-    const pos = new window.naver.maps.LatLng(found.lat, found.lng)
-    mapRef.current.panTo(pos)
-
-    const markerObj = markerListRef.current.find((m) => m.id === selectedId)
-    if (markerObj && infoWindowRef.current) {
-      infoWindowRef.current.setContent(
-        `<div style="padding:8px 12px;font-size:13px;font-weight:600;white-space:nowrap">${found.name}</div>`
-      )
-      infoWindowRef.current.open(mapRef.current, markerObj.marker)
-    }
+    if (found) mapRef.current.panTo(new nm.LatLng(found.lat, found.lng))
   }, [selectedId, ready, markers])
 
-  // 검색 결과 선택 → 이동
+  // 임시 마커 선택 → 마커 교체(강조) + 이동
   useEffect(() => {
-    if (!ready || !mapRef.current || !selectedTempId) return
+    if (!ready || !mapRef.current) return
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const nm = window.naver.maps as any
+    tempMarkerListRef.current.forEach((entry) => {
+      const selected = entry.id === selectedTempId
+      entry.marker.setMap(null)
+      const pos = new nm.LatLng(entry.data.lat, entry.data.lng)
+      const icon = makeTempIcon(nm, entry.data, selected)
+      const newMarker = new nm.Marker({ position: pos, map: mapRef.current!, icon, zIndex: selected ? 1000 : 1 })
+      nm.Event.addListener(newMarker, 'click', () => onTempMarkerClickRef.current?.(entry.data))
+      entry.marker = newMarker
+    })
+    if (!selectedTempId) return
     const found = tempMarkers.find((m) => m.id === selectedTempId)
-    if (!found) return
-
-    const pos = new window.naver.maps.LatLng(found.lat, found.lng)
-    mapRef.current.panTo(pos)
-
-    const markerObj = tempMarkerListRef.current.find((m) => m.id === selectedTempId)
-    if (markerObj && infoWindowRef.current) {
-      infoWindowRef.current.setContent(
-        `<div style="padding:8px 12px;font-size:13px;font-weight:600;white-space:nowrap">${found.name}</div>`
-      )
-      infoWindowRef.current.open(mapRef.current, markerObj.marker)
-    }
+    if (found) mapRef.current.panTo(new nm.LatLng(found.lat, found.lng))
   }, [selectedTempId, ready, tempMarkers])
 
   return (

@@ -28,7 +28,7 @@ export async function 장소검색(
 
   for (let page = 0; page < pages; page++) {
     const start = page * display + 1
-    const url = `https://openapi.naver.com/v1/search/local.json?query=${encodeURIComponent(query)}&display=${display}&start=${start}&sort=comment`
+    const url = `https://openapi.naver.com/v1/search/local.json?query=${encodeURIComponent(query)}&display=${display}&start=${start}&sort=random`
 
     const res = await fetch(url, {
       headers: {

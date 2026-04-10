@@ -13,6 +13,47 @@ export async function GET(request: Request) {
   const { searchParams } = new URL(request.url)
   const mode = searchParams.get('mode') ?? 'list'
 
+  // mode=category: 서브쿼리 목록을 순차 검색해서 합산 (rate limit 방지)
+  if (mode === 'category') {
+    const subQueries = (searchParams.get('queries') ?? '').split(',').filter(Boolean).slice(0, 8)
+    if (!subQueries.length) return NextResponse.json({ results: [] })
+
+    const lat = searchParams.get('lat')
+    const lng = searchParams.get('lng')
+    const { dong, gu } = lat && lng
+      ? await reverseGeocode(parseFloat(lat), parseFloat(lng))
+      : { dong: null, gu: null }
+
+    const seen = new Set<string>()
+    const allItems: Awaited<ReturnType<typeof 장소검색>> = []
+
+    function addItems(items: Awaited<ReturnType<typeof 장소검색>>) {
+      for (const item of items) {
+        const key = item.mapx + item.mapy
+        if (key && item.mapx && item.mapy && !seen.has(key)) {
+          seen.add(key)
+          allItems.push(item)
+        }
+      }
+    }
+
+    // Phase 1: dong 기준 검색
+    for (const q of subQueries) {
+      const query = dong ? `${dong} ${q}` : q
+      addItems(await 장소검색(query, 5, 3).catch(() => []))
+    }
+
+    // Phase 2: gu 기준으로 추가 수집
+    if (gu) {
+      for (const q of subQueries) {
+        if (allItems.length >= 60) break
+        addItems(await 장소검색(`${gu} ${q}`, 5, 3).catch(() => []))
+      }
+    }
+
+    return NextResponse.json({ results: allItems.slice(0, 60) })
+  }
+
   if (mode === 'search') {
     const query = searchParams.get('query') ?? '맛집'
     const lat = searchParams.get('lat')
@@ -33,7 +74,7 @@ export async function GET(request: Request) {
           .filter((q, i, arr) => arr.indexOf(q) === i)
 
         const batches = await Promise.all(
-          queries.map((q) => 장소검색(q, 5, 3).catch(() => []))
+          queries.map((q) => 장소검색(q, 5, 5).catch(() => []))
         )
         const seen = new Set<string>()
         results = batches.flat().filter((p) => {
@@ -41,9 +82,9 @@ export async function GET(request: Request) {
           if (seen.has(key)) return false
           seen.add(key)
           return true
-        }).slice(0, 15)
+        }).slice(0, 30)
       } else {
-        results = await 장소검색(query, 5, 3)
+        results = await 장소검색(query, 5, 5)
       }
 
       return NextResponse.json({ results })

@@ -1,133 +1,155 @@
-'use client'
+'use client';
 
-import Image from 'next/image'
-import { useEffect, useRef, useState } from 'react'
-import { Sparkles, Loader2, Plus, X, MapPin } from 'lucide-react'
-import { createClient } from '@/lib/supabase/client'
-import { Badge } from '@/components/ui/badge'
-import { Button } from '@/components/ui/button'
-import { Card, CardContent } from '@/components/ui/card'
-import { PlaceCard } from './PlaceCard'
-import { NaverMultiMap, naverMapsUrl, type MarkerData, type TempMarker, type NaverMultiMapHandle } from './NaverMultiMap'
-import { MapInlineSearch } from './MapInlineSearch'
-import { MapCategoryButtons, naverPlaceToTempMarker } from './MapCategoryButtons'
-import { useLunchPlaces } from '@/hooks/use-lunch-places'
-import type { NaverPlace } from '@/types'
+import Image from 'next/image';
+import { useEffect, useRef, useState } from 'react';
+import { Sparkles, Loader2, Plus, X, MapPin } from 'lucide-react';
+import { createClient } from '@/lib/supabase/client';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent } from '@/components/ui/card';
+import { PlaceCard } from './PlaceCard';
+import {
+  NaverMultiMap,
+  naverMapsUrl,
+  type MarkerData,
+  type TempMarker,
+  type NaverMultiMapHandle,
+} from './NaverMultiMap';
+import { MapInlineSearch } from './MapInlineSearch';
+import { MapCategoryButtons, naverPlaceToTempMarker } from './MapCategoryButtons';
+import { useLunchPlaces } from '@/hooks/use-lunch-places';
+import type { NaverPlace } from '@/types';
 
 function parseCoords(naverPlaceId: string | null) {
-  if (!naverPlaceId) return null
-  const [mapx, mapy] = naverPlaceId.split(',')
-  if (!mapx || !mapy) return null
-  return { lng: parseInt(mapx) / 1e7, lat: parseInt(mapy) / 1e7 }
+  if (!naverPlaceId) return null;
+  const [mapx, mapy] = naverPlaceId.split(',');
+  if (!mapx || !mapy) return null;
+  return { lng: parseInt(mapx) / 1e7, lat: parseInt(mapy) / 1e7 };
 }
 
 function getMainCategory(category: string | null) {
-  if (!category) return null
-  const parts = category.split('>')
-  return parts.length > 1 ? parts[1].trim() : parts[0].trim()
+  if (!category) return null;
+  const parts = category.split('>');
+  return parts.length > 1 ? parts[1].trim() : parts[0].trim();
 }
 
 interface RecommendResult {
-  name: string
-  reason: string
+  name: string;
+  reason: string;
 }
 
 export function PlaceList() {
-  const { places, isLoading, addPlace } = useLunchPlaces()
-  const mapRef = useRef<NaverMultiMapHandle>(null)
-  const [currentUserId, setCurrentUserId] = useState<string>('')
-  const [selectedId, setSelectedId] = useState<string | null>(null)
-  const [activeTab, setActiveTab] = useState<'all' | 'recommend'>('all')
-  const [activeCategory, setActiveCategory] = useState<string | null>(null)
-  const [recommendation, setRecommendation] = useState<RecommendResult | null>(null)
-  const [recommending, setRecommending] = useState(false)
-  const [tempMarkers, setTempMarkers] = useState<TempMarker[]>([])
-  const [selectedTempPlace, setSelectedTempPlace] = useState<TempMarker | null>(null)
-  const [panelThumbnail, setPanelThumbnail] = useState<string | null>(null)
+  const { places, isLoading, addPlace } = useLunchPlaces();
+  const mapRef = useRef<NaverMultiMapHandle>(null);
+  const [currentUserId, setCurrentUserId] = useState<string>('');
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState<'all' | 'recommend'>('all');
+  const [activeCategory, setActiveCategory] = useState<string | null>(null);
+  const [recommendation, setRecommendation] = useState<RecommendResult | null>(null);
+  const [recommending, setRecommending] = useState(false);
+  const [allCategoryMarkers, setAllCategoryMarkers] = useState<TempMarker[]>([]);
+  const [categoryIndex, setCategoryIndex] = useState<number | null>(null);
+  const [tempMarkers, setTempMarkers] = useState<TempMarker[]>([]);
+  const [selectedTempPlace, setSelectedTempPlace] = useState<TempMarker | null>(null);
+  const [panelThumbnail, setPanelThumbnail] = useState<string | null>(null);
 
   useEffect(() => {
-    const supabase = createClient()
+    const supabase = createClient();
     supabase.auth.getUser().then(({ data: { user } }) => {
-      if (user) setCurrentUserId(user.id)
-    })
-  }, [])
+      if (user) setCurrentUserId(user.id);
+    });
+  }, []);
 
   // 선택된 장소 썸네일 이미지 fetch
   useEffect(() => {
     const name =
       selectedTempPlace?.name ??
-      (selectedId ? places.find((p) => p.id === selectedId)?.name : null)
+      (selectedId ? places.find((p) => p.id === selectedId)?.name : null);
 
     if (!name) {
-      setPanelThumbnail(null)
-      return
+      setPanelThumbnail(null);
+      return;
     }
 
-    setPanelThumbnail(null)
-    const controller = new AbortController()
+    setPanelThumbnail(null);
+    const controller = new AbortController();
     fetch(`/api/lunch/place-image?q=${encodeURIComponent(name)}`, {
       signal: controller.signal,
     })
       .then((r) => r.json())
-      .then((data) => { if (data.thumbnail) setPanelThumbnail(data.thumbnail) })
-      .catch(() => {})
+      .then((data) => {
+        if (data.thumbnail) setPanelThumbnail(data.thumbnail);
+      })
+      .catch(() => {});
 
-    return () => controller.abort()
-  }, [selectedTempPlace, selectedId, places])
+    return () => controller.abort();
+  }, [selectedTempPlace, selectedId, places]);
 
   const categories = Array.from(
     new Set(places.map((p) => getMainCategory(p.category)).filter(Boolean) as string[])
-  )
+  );
 
   const filteredPlaces =
     activeTab === 'all' && activeCategory
       ? places.filter((p) => getMainCategory(p.category) === activeCategory)
-      : places
+      : places;
 
   const markers: MarkerData[] = filteredPlaces
     .map((p) => {
-      const coords = parseCoords(p.naver_place_id)
-      if (!coords) return null
-      return { id: p.id, lat: coords.lat, lng: coords.lng, name: p.name }
+      const coords = parseCoords(p.naver_place_id);
+      if (!coords) return null;
+      return { id: p.id, lat: coords.lat, lng: coords.lng, name: p.name };
     })
-    .filter((m): m is MarkerData => m !== null)
+    .filter((m): m is MarkerData => m !== null);
 
   function handleSearchResults(navPlaces: NaverPlace[]) {
-    setTempMarkers(navPlaces.map(naverPlaceToTempMarker))
-    setSelectedTempPlace(null)
+    setTempMarkers(navPlaces.map((p) => naverPlaceToTempMarker(p)));
+    setSelectedTempPlace(null);
   }
 
   function handlePlaceSelect(place: NaverPlace) {
-    const tm = naverPlaceToTempMarker(place)
+    const tm = naverPlaceToTempMarker(place);
     setTempMarkers((prev) => {
-      if (prev.find((m) => m.id === tm.id)) return prev
-      return [...prev, tm]
-    })
-    setSelectedTempPlace(tm)
+      if (prev.find((m) => m.id === tm.id)) return prev;
+      return [...prev, tm];
+    });
+    setSelectedTempPlace(tm);
   }
 
   function handleTempMarkerClick(marker: TempMarker) {
-    setSelectedTempPlace(marker)
+    setSelectedTempPlace(marker);
+    setSelectedId(null);
+    const idx = allCategoryMarkers.findIndex((m) => m.id === marker.id);
+    if (idx !== -1) setCategoryIndex(idx);
+  }
+
+  function navigateCategory(delta: number) {
+    if (categoryIndex === null || allCategoryMarkers.length === 0) return;
+    const next = categoryIndex + delta;
+    if (next < 0 || next >= allCategoryMarkers.length) return;
+    setCategoryIndex(next);
+    setSelectedTempPlace(allCategoryMarkers[next]);
+    setSelectedId(null);
   }
 
   async function handleRecommend() {
-    setRecommending(true)
-    setRecommendation(null)
+    setRecommending(true);
+    setRecommendation(null);
     try {
       const res = await fetch('/api/lunch/recommend', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ places: filteredPlaces }),
-      })
-      const data = await res.json()
-      if (!res.ok) throw new Error(data.error)
-      setRecommendation(data)
-      const found = places.find((p) => p.name === data.name)
-      if (found) setSelectedId(found.id)
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+      setRecommendation(data);
+      const found = places.find((p) => p.name === data.name);
+      if (found) setSelectedId(found.id);
     } catch (e) {
-      alert(e instanceof Error ? e.message : '추천 실패')
+      alert(e instanceof Error ? e.message : '추천 실패');
     } finally {
-      setRecommending(false)
+      setRecommending(false);
     }
   }
 
@@ -138,15 +160,14 @@ export function PlaceList() {
         category: tm.category || null,
         naver_place_id: tm.id,
         address: tm.address || null,
-      })
-      setSelectedTempPlace(null)
+      });
+      setSelectedTempPlace(null);
     } catch (e) {
-      alert(e instanceof Error ? e.message : '추가 실패')
+      alert(e instanceof Error ? e.message : '추가 실패');
     }
   }
 
-  const isAlreadyRegistered = (tm: TempMarker) =>
-    places.some((p) => p.naver_place_id === tm.id)
+  const isAlreadyRegistered = (tm: TempMarker) => places.some((p) => p.naver_place_id === tm.id);
 
   return (
     <div className="flex flex-col lg:flex-row gap-4 items-start">
@@ -157,7 +178,10 @@ export function PlaceList() {
           <Button
             variant={activeTab === 'all' ? 'default' : 'outline'}
             size="sm"
-            onClick={() => { setActiveTab('all'); setRecommendation(null) }}
+            onClick={() => {
+              setActiveTab('all');
+              setRecommendation(null);
+            }}
           >
             전체{places.length > 0 ? ` (${places.length})` : ''}
           </Button>
@@ -239,7 +263,9 @@ export function PlaceList() {
           <div className="text-center py-10 text-muted-foreground">
             <p className="text-3xl mb-2">🍽️</p>
             <p className="text-sm">
-              {activeCategory ? `${activeCategory} 카테고리 식당이 없어요` : '아직 등록된 식당이 없어요'}
+              {activeCategory
+                ? `${activeCategory} 카테고리 식당이 없어요`
+                : '아직 등록된 식당이 없어요'}
             </p>
           </div>
         )}
@@ -252,8 +278,8 @@ export function PlaceList() {
               currentUserId={currentUserId}
               selected={selectedId === place.id}
               onClick={() => {
-                setSelectedId((prev) => (prev === place.id ? null : place.id))
-                setSelectedTempPlace(null)
+                setSelectedId((prev) => (prev === place.id ? null : place.id));
+                setSelectedTempPlace(null);
               }}
             />
           ))}
@@ -266,7 +292,11 @@ export function PlaceList() {
           ref={mapRef}
           markers={markers}
           selectedId={selectedId}
-          onMarkerClick={setSelectedId}
+          onMarkerClick={(id) => {
+            setSelectedId(id);
+            setSelectedTempPlace(null);
+            setCategoryIndex(null);
+          }}
           tempMarkers={tempMarkers}
           selectedTempId={selectedTempPlace?.id ?? null}
           onTempMarkerClick={handleTempMarkerClick}
@@ -281,71 +311,107 @@ export function PlaceList() {
         />
 
         {/* 선택된 등록 식당 패널 */}
-        {selectedId && !selectedTempPlace && (() => {
-          const sp = places.find((p) => p.id === selectedId)
-          if (!sp) return null
-          return (
-            <div className="absolute bottom-14 left-3 right-3 z-20 bg-white/95 backdrop-blur-sm rounded-lg shadow-lg p-3">
-              <div className="flex items-start gap-2">
-                {/* 썸네일 */}
-                <div className="w-14 h-14 rounded-lg overflow-hidden shrink-0 bg-muted flex items-center justify-center">
-                  {panelThumbnail ? (
-                    <Image src={panelThumbnail} alt={sp.name} width={56} height={56} className="w-full h-full object-cover" />
-                  ) : (
-                    <span className="text-2xl">🍽️</span>
-                  )}
-                </div>
-                <div className="flex-1 min-w-0">
-                  <p className="font-semibold text-sm truncate">{sp.name}</p>
-                  {sp.category && (
-                    <Badge variant="secondary" className="text-xs mt-0.5">
-                      {sp.category.split('>').pop()?.trim()}
-                    </Badge>
-                  )}
-                  {sp.address && (
-                    <p className="text-xs text-muted-foreground mt-1 truncate">{sp.address}</p>
-                  )}
-                </div>
-                <div className="flex gap-1 shrink-0">
-                  <a
-                    href={(() => {
-                      if (sp.naver_place_id) {
-                        const [mapx, mapy] = sp.naver_place_id.split(',')
-                        if (mapx && mapy)
-                          return naverMapsUrl(sp.name, parseInt(mapy) / 1e7, parseInt(mapx) / 1e7)
-                      }
-                      return naverMapsUrl(sp.name)
-                    })()}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                  >
-                    <Button size="sm" variant="outline" className="h-7 text-xs gap-1">
-                      <MapPin className="h-3 w-3" />
-                      네이버 지도
+        {selectedId &&
+          !selectedTempPlace &&
+          (() => {
+            const sp = places.find((p) => p.id === selectedId);
+            if (!sp) return null;
+            return (
+              <div className="absolute bottom-14 left-3 right-3 z-20 bg-white/95 backdrop-blur-sm rounded-lg shadow-lg p-3">
+                <div className="flex items-start gap-2">
+                  {/* 썸네일 */}
+                  <div className="w-14 h-14 rounded-lg overflow-hidden shrink-0 bg-muted flex items-center justify-center">
+                    {panelThumbnail ? (
+                      <Image
+                        src={panelThumbnail}
+                        alt={sp.name}
+                        width={56}
+                        height={56}
+                        className="w-full h-full object-cover"
+                      />
+                    ) : (
+                      <span className="text-2xl">🍽️</span>
+                    )}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="font-semibold text-sm truncate">{sp.name}</p>
+                    {sp.category && (
+                      <Badge variant="secondary" className="text-xs mt-0.5">
+                        {sp.category.split('>').pop()?.trim()}
+                      </Badge>
+                    )}
+                    {sp.address && (
+                      <p className="text-xs text-muted-foreground mt-1 truncate">{sp.address}</p>
+                    )}
+                  </div>
+                  <div className="flex gap-1 shrink-0">
+                    <a
+                      href={(() => {
+                        if (sp.naver_place_id) {
+                          const [mapx, mapy] = sp.naver_place_id.split(',');
+                          if (mapx && mapy)
+                            return naverMapsUrl(
+                              sp.name,
+                              parseInt(mapy) / 1e7,
+                              parseInt(mapx) / 1e7
+                            );
+                        }
+                        return naverMapsUrl(sp.name);
+                      })()}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                    >
+                      <Button size="sm" variant="outline" className="h-7 text-xs gap-1">
+                        <MapPin className="h-3 w-3" />
+                        네이버 지도
+                      </Button>
+                    </a>
+                    <Button
+                      size="icon"
+                      variant="ghost"
+                      className="h-7 w-7"
+                      onClick={() => setSelectedId(null)}
+                    >
+                      <X className="h-3 w-3" />
                     </Button>
-                  </a>
-                  <Button
-                    size="icon"
-                    variant="ghost"
-                    className="h-7 w-7"
-                    onClick={() => setSelectedId(null)}
-                  >
-                    <X className="h-3 w-3" />
-                  </Button>
+                  </div>
                 </div>
               </div>
-            </div>
-          )
-        })()}
+            );
+          })()}
 
         {/* 선택된 검색 결과 패널 */}
         {selectedTempPlace && (
           <div className="absolute bottom-14 left-3 right-3 z-20 bg-white/95 backdrop-blur-sm rounded-lg shadow-lg p-3">
+            {/* 카테고리 내비게이션 */}
+            {allCategoryMarkers.length > 1 && categoryIndex !== null && (
+              <div className="flex items-center justify-between mb-2">
+                <Button
+                  size="sm" variant="outline" className="h-6 text-xs px-2"
+                  disabled={categoryIndex === 0}
+                  onClick={() => navigateCategory(-1)}
+                >← 이전</Button>
+                <span className="text-xs text-muted-foreground">
+                  {categoryIndex + 1} / {allCategoryMarkers.length}
+                </span>
+                <Button
+                  size="sm" variant="outline" className="h-6 text-xs px-2"
+                  disabled={categoryIndex === allCategoryMarkers.length - 1}
+                  onClick={() => navigateCategory(1)}
+                >다음 →</Button>
+              </div>
+            )}
             <div className="flex items-start gap-2">
               {/* 썸네일 */}
               <div className="w-14 h-14 rounded-lg overflow-hidden shrink-0 bg-muted flex items-center justify-center">
                 {panelThumbnail ? (
-                  <Image src={panelThumbnail} alt={selectedTempPlace.name} width={56} height={56} className="w-full h-full object-cover" />
+                  <Image
+                    src={panelThumbnail}
+                    alt={selectedTempPlace.name}
+                    width={56}
+                    height={56}
+                    className="w-full h-full object-cover"
+                  />
                 ) : (
                   <span className="text-2xl">🍽️</span>
                 )}
@@ -365,7 +431,10 @@ export function PlaceList() {
               </div>
               <div className="flex gap-1 shrink-0">
                 <a
-                  href={selectedTempPlace.naverLink ?? `https://map.naver.com/p/search/${encodeURIComponent(selectedTempPlace.name)}`}
+                  href={
+                    selectedTempPlace.naverLink ??
+                    `https://map.naver.com/p/search/${encodeURIComponent(selectedTempPlace.name)}`
+                  }
                   target="_blank"
                   rel="noopener noreferrer"
                 >
@@ -385,7 +454,9 @@ export function PlaceList() {
                   </Button>
                 )}
                 {isAlreadyRegistered(selectedTempPlace) && (
-                  <Badge variant="secondary" className="self-center text-xs">등록됨</Badge>
+                  <Badge variant="secondary" className="self-center text-xs">
+                    등록됨
+                  </Badge>
                 )}
                 <Button
                   size="icon"
@@ -404,11 +475,18 @@ export function PlaceList() {
         <MapCategoryButtons
           mapRef={mapRef}
           onResults={(markers) => {
-            setTempMarkers(markers)
-            setSelectedTempPlace(null)
+            setAllCategoryMarkers(markers);
+            setTempMarkers(markers);
+            if (markers.length > 0) {
+              setCategoryIndex(0);
+              setSelectedTempPlace(markers[0]);
+            } else {
+              setCategoryIndex(null);
+              setSelectedTempPlace(null);
+            }
           }}
         />
       </div>
     </div>
-  )
+  );
 }

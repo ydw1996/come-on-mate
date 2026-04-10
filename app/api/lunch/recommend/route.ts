@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
+import OpenAI from 'openai'
 import { createClient } from '@/lib/supabase/server'
-import { getClaude, CLAUDE_MODEL } from '@/lib/claude'
 import type { LunchPlaceWithLastPick } from '@/types'
 
 export async function POST(request: Request) {
@@ -19,10 +19,11 @@ export async function POST(request: Request) {
     })
     .join('\n')
 
-  const claude = getClaude()
-  const message = await claude.messages.create({
-    model: CLAUDE_MODEL,
+  const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
+  const completion = await openai.chat.completions.create({
+    model: 'gpt-4o-mini',
     max_tokens: 300,
+    response_format: { type: 'json_object' },
     messages: [
       {
         role: 'user',
@@ -31,12 +32,9 @@ export async function POST(request: Request) {
     ],
   })
 
-  const text = message.content[0].type === 'text' ? message.content[0].text : ''
-  const match = text.match(/\{[\s\S]*\}/)
-  if (!match) return NextResponse.json({ error: '추천 생성 실패' }, { status: 500 })
-
+  const text = completion.choices[0].message.content ?? ''
   try {
-    return NextResponse.json(JSON.parse(match[0]))
+    return NextResponse.json(JSON.parse(text))
   } catch {
     return NextResponse.json({ error: '응답 파싱 실패' }, { status: 500 })
   }
