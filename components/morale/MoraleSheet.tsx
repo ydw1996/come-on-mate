@@ -172,10 +172,10 @@ function AllView({
               </tr>
             </thead>
             <tbody>
-              {employees.map((emp) => {
+              {employees.map((emp, idx) => {
                 const monthData = emp.월별.find((m) => m.월 === thisMonth)
                 return (
-                  <tr key={emp.no} className="border-b last:border-0 hover:bg-muted/30">
+                  <tr key={`${emp.no}-${idx}`} className="border-b last:border-0 hover:bg-muted/30">
                     <td className="px-4 py-3 text-muted-foreground">{emp.no}</td>
                     <td className="px-4 py-3 font-medium">{emp.이름}</td>
                     <td className="px-4 py-3 text-right">

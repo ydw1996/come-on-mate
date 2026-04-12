@@ -1,6 +1,8 @@
 import { createClient } from '@/lib/supabase/server'
 import { fetchMoraleSheet } from '@/lib/google-sheets'
 import { MoraleSheet } from '@/components/morale/MoraleSheet'
+import { ReceiptMailComposer } from '@/components/morale/ReceiptMailComposer'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 
 export default async function MoralePage() {
   const supabase = await createClient()
@@ -12,13 +14,23 @@ export default async function MoralePage() {
     .eq('id', user!.id)
     .single()
 
-  // 서버에서 한 번만 fetch — 탭 전환은 클라이언트 필터링으로 처리
   const employees = await fetchMoraleSheet()
 
   return (
     <div className="space-y-6">
       <h2 className="text-xl font-semibold">사기진작비</h2>
-      <MoraleSheet employees={employees} userName={profile?.name ?? ''} />
+      <Tabs defaultValue="sheet">
+        <TabsList>
+          <TabsTrigger value="sheet">내역 조회</TabsTrigger>
+          <TabsTrigger value="receipt">영수증 메일</TabsTrigger>
+        </TabsList>
+        <TabsContent value="sheet" className="pt-4">
+          <MoraleSheet employees={employees} userName={profile?.name ?? ''} />
+        </TabsContent>
+        <TabsContent value="receipt" className="pt-4">
+          <ReceiptMailComposer employees={employees} />
+        </TabsContent>
+      </Tabs>
     </div>
   )
 }
