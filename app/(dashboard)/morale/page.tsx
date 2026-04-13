@@ -16,6 +16,14 @@ export default async function MoralePage() {
 
   const employees = await fetchMoraleSheet()
 
+  const { data: employeeProfiles } = await supabase
+    .from('employee_profiles')
+    .select('name, position')
+
+  const filteredEmployees = employeeProfiles
+    ? employees.filter((e) => employeeProfiles.some((ep) => ep.name === e.이름))
+    : employees
+
   return (
     <div className="space-y-6">
       <h2 className="text-xl font-semibold">사기진작비</h2>
@@ -25,10 +33,10 @@ export default async function MoralePage() {
           <TabsTrigger value="receipt">영수증 메일</TabsTrigger>
         </TabsList>
         <TabsContent value="sheet" className="pt-4">
-          <MoraleSheet employees={employees} userName={profile?.name ?? ''} />
+          <MoraleSheet employees={filteredEmployees} userName={profile?.name ?? ''} />
         </TabsContent>
         <TabsContent value="receipt" className="pt-4">
-          <ReceiptMailComposer employees={employees} />
+          <ReceiptMailComposer employees={employees} employeeProfiles={employeeProfiles ?? []} />
         </TabsContent>
       </Tabs>
     </div>

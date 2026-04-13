@@ -2,6 +2,24 @@
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
 
+@keyframes ai-wave {
+  0%   { background-position: 50% 0%; opacity: 0.5; }
+  50%  { background-position: 50% 100%; opacity: 0.9; }
+  100% { background-position: 50% 0%; opacity: 0.5; }
+}
+.ai-scanning-overlay {
+  background: linear-gradient(
+    180deg,
+    transparent 0%,
+    rgba(59, 130, 246, 0.08) 20%,
+    rgba(37, 99, 235, 0.28) 45%,
+    rgba(59, 130, 246, 0.08) 80%,
+    transparent 100%
+  );
+  background-size: 100% 300%;
+  animation: ai-wave 2.2s ease-in-out infinite;
+}
+
 @custom-variant dark (&:is(.dark *));
 
 @theme inline {

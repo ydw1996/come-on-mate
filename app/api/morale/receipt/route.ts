@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { createClient } from '@/lib/supabase/server'
+import { createClient, createAdminClient } from '@/lib/supabase/server'
 import { getOpenAI } from '@/lib/openai'
 
 export async function POST(request: Request) {
@@ -21,14 +21,15 @@ export async function POST(request: Request) {
     menuDataUrl = `data:${menuFile.type};base64,${mb.toString('base64')}`
   }
 
-  // Supabase Storage 업로드 (실패해도 계속)
+  // Supabase Storage 업로드 (서비스 롤로 RLS 우회, 실패해도 계속)
+  const adminClient = createAdminClient()
   let publicUrl: string | null = null
   const fileName = `receipts/${user.id}/${Date.now()}_${file.name}`
-  const { error: uploadError } = await supabase.storage.from('morale').upload(fileName, buffer, { contentType: file.type })
+  const { error: uploadError } = await adminClient.storage.from('morale').upload(fileName, buffer, { contentType: file.type })
   if (uploadError) {
     console.warn('[morale/receipt] 스토리지 업로드 실패:', uploadError.message)
   } else {
-    publicUrl = supabase.storage.from('morale').getPublicUrl(fileName).data.publicUrl
+    publicUrl = adminClient.storage.from('morale').getPublicUrl(fileName).data.publicUrl
   }
 
   try {
@@ -49,7 +50,9 @@ export async function POST(request: Request) {
 
 {
   "place": "상호명 (영수증 맨 위 가게 이름 + 지점명, 예: 매머드익스프레스 홍대경의선숲길점)",
+  "placeType": "cafe 또는 restaurant",
   "date": "YYYY-MM-DD",
+  "time": "HH:MM",
   "totalAmount": 최종결제금액(숫자),
   "items": [
     {"item": "영수증에 적힌 메뉴명 그대로", "quantity": 수량},
@@ -59,28 +62,40 @@ export async function POST(request: Request) {
 
 규칙:
 - place: 영수증 상단 상호명. 한글 OCR 오류 주의. 예) "매머드" "익스프레스" 같은 브랜드명 정확히.
+- placeType: 영수증 내용을 보고 판단. 음료·디저트 위주(카페, 베이커리, 베이글집 등) → "cafe". 식사 메뉴(밥, 찌개, 국수, 고기 등) → "restaurant". 영화, 공연, 노래방, 볼링, 마사지, 쇼핑 등 식음료 외 문화·여가·체험 활동 → "other".
 - date: 영수증의 날짜. 연도 없으면 2026 가정.
+- time: 영수증의 결제 시각 (24시간 HH:MM). 없으면 null.
 - totalAmount: "합계" "결제금액" "받을금액" 중 최종 숫자. 공급가액(VAT제외) 절대 사용 금지.
 - items: 영수증 주문 줄 하나하나 모두 읽기. 수량 표시 없으면 1.
   메뉴명은 영수증에 적힌 그대로 (예: "머스켓 그린티 ICE", "카페 아메리카노 HOT SIZE M").
   절대 빠뜨리지 말 것 — 총 수량 합이 영수증 합계 수량과 맞아야 함.
-  주의: "샷추가", "휘핑크림추가" 등 옵션/추가 항목은 별도 item으로 만들지 말고
-  직전 메뉴 item명에 "(샷추가)" 형태로 포함시킬 것.
-  예) "아메리카노" 다음 줄에 "샷추가" → item: "아메리카노 (샷추가)", quantity: 1`,
+
+  OCR 원칙: 영수증에 인쇄된 글자를 추측하거나 비슷한 단어로 바꾸지 말고 보이는 그대로 읽을 것.
+  SIZE 표기("SIZE M" 등)와 샷 표기("(2샷)" 등)는 메뉴명의 일부로 그대로 포함.
+
+  옵션 처리 규칙:
+  - "샷추가 아메리카노", "샷추가 라떼" 처럼 뒤에 음료명이 붙은 경우 → 독립 메뉴로 유지
+  - "샷추가", "휘핑크림추가" 처럼 단독으로 적힌 옵션 줄 → 별도 item 만들지 말고 직전 메뉴명에 "(샷추가)" 형태로 포함
+  예1) "아메리카노" 다음 줄에 "샷추가" → item: "아메리카노 (샷추가)", quantity: 1
+  예2) "샷추가 아메리카노 SIZE M" → 그대로 item: "샷추가 아메리카노 SIZE M", quantity: 1`,
           },
         ],
       }],
     })
 
     let place = ''
+    let placeType: 'cafe' | 'restaurant' | 'other' = 'restaurant'
     let date: string | null = null
+    let time: string | null = null
     let totalAmount = 0
     let items: { item: string; quantity: number; unitPrice: number }[] = []
 
     try {
       const p1 = JSON.parse(step1.choices[0].message.content ?? '{}')
       place = p1.place ?? ''
+      placeType = p1.placeType === 'cafe' ? 'cafe' : p1.placeType === 'other' ? 'other' : 'restaurant'
       date = p1.date ?? null
+      time = p1.time ?? null
       totalAmount = p1.totalAmount ?? 0
       const rawItems: { item: string; quantity: number }[] = p1.items ?? []
       console.log('[morale/receipt] Step1 items:', rawItems)
@@ -168,7 +183,7 @@ ${itemList}
       items = []
     }
 
-    return NextResponse.json({ place, date, totalAmount, items, receiptUrl: publicUrl })
+    return NextResponse.json({ place, placeType, date, time, totalAmount, items, receiptUrl: publicUrl })
   } catch (err) {
     console.error('[morale/receipt] 에러:', err)
     const message = err instanceof Error ? err.message : String(err)
