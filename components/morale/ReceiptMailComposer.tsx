@@ -442,8 +442,9 @@ export function ReceiptMailComposer({
                   placeholder="0"
                   step={100}
                   min={0}
+                  max={5000000}
                   value={totalAmount || ''}
-                  onChange={(e) => setTotalAmount(Number(e.target.value))}
+                  onChange={(e) => setTotalAmount(Math.min(5000000, Number(e.target.value)))}
                 />
               </div>
             </div>
@@ -519,14 +520,26 @@ export function ReceiptMailComposer({
                     value={p.position}
                     onChange={(e) => updateParticipant(i, 'position', e.target.value)}
                   />
-                  <Input
-                    type="number"
-                    placeholder="금액"
-                    step={100}
-                    min={0}
-                    value={p.amount || ''}
-                    onChange={(e) => updateParticipant(i, 'amount', Number(e.target.value))}
-                  />
+                  {(() => {
+                    const currentMonth = `${new Date().getMonth() + 1}월`;
+                    const emp = employees.find((e) => e.이름 === p.name);
+                    const remaining = emp?.월별.find((m) => m.월 === currentMonth)?.잔여금액;
+                    const cap = remaining !== undefined ? Math.min(50000, remaining) : 50000;
+                    return (
+                      <Input
+                        type="number"
+                        placeholder="금액"
+                        step={100}
+                        min={0}
+                        max={cap}
+                        value={p.amount === 0 ? 0 : p.amount || ''}
+                        onChange={(e) => {
+                          const val = Math.min(cap, Math.max(0, Number(e.target.value)));
+                          updateParticipant(i, 'amount', val);
+                        }}
+                      />
+                    );
+                  })()}
                   <Button
                     size="icon"
                     variant="ghost"
