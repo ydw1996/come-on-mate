@@ -16,6 +16,14 @@ import {
 } from '@/components/ui/select';
 import type { MoraleEmployee } from '@/lib/google-sheets';
 
+const POSITION_RANK: Record<string, number> = {
+  이사: 1,
+  수석: 2,
+  책임: 3,
+  선임: 4,
+  프로: 5,
+};
+
 const USE_TYPES = [
   { value: 'cafe', label: '카페' },
   { value: 'lunch', label: '점심식사 추가금' },
@@ -84,23 +92,28 @@ function NameCombobox({
 }) {
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState(value);
+  const [prevValue, setPrevValue] = useState(value);
   const [activeIdx, setActiveIdx] = useState(0);
+  const [dropdownPos, setDropdownPos] = useState({ top: 0, left: 0 });
   const inputRef = useRef<HTMLInputElement>(null);
-  const lastCommitted = useRef(value);
 
   // 외부에서 value가 바뀔 때(영수증 분석 후 자동 세팅)만 search 동기화
-  useEffect(() => {
-    if (value !== lastCommitted.current) {
-      setSearch(value);
-      lastCommitted.current = value;
-    }
-  }, [value]);
+  if (value !== prevValue) {
+    setPrevValue(value);
+    setSearch(value);
+  }
 
   const filtered = employees.map((e) => e.이름).filter((n) => n && n.includes(search));
 
+  function openDropdown() {
+    const rect = inputRef.current?.getBoundingClientRect();
+    if (rect) setDropdownPos({ top: rect.bottom + window.scrollY + 4, left: rect.left + window.scrollX });
+    setOpen(true);
+  }
+
   function commit(name: string) {
-    lastCommitted.current = name;
     setSearch(name);
+    setPrevValue(name);
     setOpen(false);
     onChange(name);
   }
@@ -109,12 +122,12 @@ function NameCombobox({
     if (e.nativeEvent.isComposing) return; // 한글 IME 조합 중엔 무시
     if (e.key === 'ArrowDown') {
       e.preventDefault();
-      setOpen(true);
+      openDropdown();
       setActiveIdx((i) => Math.min(i + 1, filtered.length - 1));
     } else if (e.key === 'ArrowUp') {
       e.preventDefault();
       setActiveIdx((i) => Math.max(i - 1, 0));
-    } else if (e.key === 'Enter') {
+    } else if (e.key === 'Enter' || (e.key === 'Tab' && open && filtered.length > 0)) {
       e.preventDefault();
       commit(open && filtered[activeIdx] ? filtered[activeIdx] : search);
     } else if (e.key === 'Escape') {
@@ -133,9 +146,14 @@ function NameCombobox({
             setActiveIdx(0);
           }}
           onChange={(e) => {
-            setSearch(e.target.value);
-            setOpen(true);
+            const val = e.target.value;
+            setSearch(val);
+            openDropdown();
             setActiveIdx(0);
+            if (employees.some((emp) => emp.이름 === val)) {
+              setPrevValue(val);
+              onChange(val);
+            }
           }}
           onBlur={() => setTimeout(() => setOpen(false), 150)}
           onKeyDown={handleKeyDown}
@@ -145,14 +163,7 @@ function NameCombobox({
       {open && filtered.length > 0 && (
         <div
           className="fixed z-[9999] mt-1 w-40 rounded-md border bg-popover shadow-lg"
-          style={{
-            top: inputRef.current
-              ? inputRef.current.getBoundingClientRect().bottom + window.scrollY + 4
-              : 0,
-            left: inputRef.current
-              ? inputRef.current.getBoundingClientRect().left + window.scrollX
-              : 0,
-          }}
+          style={{ top: dropdownPos.top, left: dropdownPos.left }}
         >
           {filtered.map((name, idx) => (
             <button
@@ -179,6 +190,7 @@ export function ReceiptMailComposer({
   employeeProfiles?: { name: string; position: string }[];
 }) {
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const abortRef = useRef<AbortController | null>(null);
 
   const [, setReceiptFile] = useState<File | null>(null);
   const [receiptPreview, setReceiptPreview] = useState<string | null>(null);
@@ -218,6 +230,15 @@ export function ReceiptMailComposer({
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [useType, totalAmount, headCount]);
 
+  const sortedParticipants = [...participants].sort((a, b) => {
+    const rankA = POSITION_RANK[a.position] ?? 99;
+    const rankB = POSITION_RANK[b.position] ?? 99;
+    if (rankA !== rankB) return rankA - rankB;
+    const noA = employees.find((e) => e.이름 === a.name)?.no ?? 9999;
+    const noB = employees.find((e) => e.이름 === b.name)?.no ?? 9999;
+    return noA - noB;
+  });
+
   const subject = (() => {
     if (!date) return '[사기진작비] 사용의 건 (영수증 첨부)';
     const d = new Date(date);
@@ -233,7 +254,7 @@ export function ReceiptMailComposer({
     return `[사기진작비] ${dateStr} 사용의 건 (영수증 첨부${suffix})`;
   })();
 
-  const emailBody = buildEmailBody({ useType, place, date, totalAmount, participants });
+  const emailBody = buildEmailBody({ useType, place, date, totalAmount, participants: sortedParticipants });
 
   async function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
@@ -244,11 +265,14 @@ export function ReceiptMailComposer({
   }
 
   async function analyze(receipt: File) {
+    abortRef.current?.abort();
+    const controller = new AbortController();
+    abortRef.current = controller;
     setAnalyzing(true);
     try {
       const form = new FormData();
       form.append('receipt', receipt);
-      const res = await fetch('/api/morale/receipt', { method: 'POST', body: form });
+      const res = await fetch('/api/morale/receipt', { method: 'POST', body: form, signal: controller.signal });
       const data = await res.json();
       if (data.receiptUrl) setReceiptUrl(data.receiptUrl);
       if (data.place) setPlace(data.place);
@@ -287,7 +311,8 @@ export function ReceiptMailComposer({
         }
         setParticipants(expanded);
       }
-    } catch {
+    } catch (err) {
+      if (err instanceof Error && err.name === 'AbortError') return;
       alert('영수증 분석 실패');
     } finally {
       setAnalyzing(false);
@@ -308,6 +333,18 @@ export function ReceiptMailComposer({
 
   const totalDeduction = participants.reduce((s, p) => s + p.amount, 0);
   const [lightbox, setLightbox] = useState(false);
+  const [dragging, setDragging] = useState(false);
+
+  function handleDrop(e: React.DragEvent<HTMLDivElement>) {
+    e.preventDefault();
+    setDragging(false);
+    if (receiptPreview) return;
+    const file = e.dataTransfer.files?.[0];
+    if (!file || !file.type.startsWith('image/')) return;
+    setReceiptFile(file);
+    setReceiptPreview(URL.createObjectURL(file));
+    analyze(file);
+  }
 
   return (
     <div className="lg:grid lg:grid-cols-[3fr_2fr] lg:gap-6 lg:items-start">
@@ -319,8 +356,11 @@ export function ReceiptMailComposer({
           </CardHeader>
           <CardContent>
             <div
-              className="w-full h-36 rounded-lg border-2 border-dashed border-muted-foreground/30 flex flex-col items-center justify-center cursor-pointer hover:border-primary/50 transition-colors overflow-hidden bg-muted/20 relative"
+              className={`w-full h-36 rounded-lg border-2 border-dashed flex flex-col items-center justify-center cursor-pointer transition-colors overflow-hidden bg-muted/20 relative ${dragging ? 'border-primary bg-primary/5' : 'border-muted-foreground/30 hover:border-primary/50'}`}
               onClick={() => !receiptPreview ? fileInputRef.current?.click() : !analyzing && setLightbox(true)}
+              onDragOver={(e) => { e.preventDefault(); if (!receiptPreview) setDragging(true); }}
+              onDragLeave={() => setDragging(false)}
+              onDrop={handleDrop}
             >
               {receiptPreview ? (
                 <>
@@ -334,6 +374,9 @@ export function ReceiptMailComposer({
                     className="absolute top-1.5 right-1.5 z-30 rounded-full bg-black/60 p-1 text-white hover:bg-black/80 transition-colors"
                     onClick={(e) => {
                       e.stopPropagation();
+                      abortRef.current?.abort();
+                      abortRef.current = null;
+                      setAnalyzing(false);
                       setReceiptPreview(null);
                       setReceiptUrl(null);
                       if (fileInputRef.current) fileInputRef.current.value = '';
@@ -344,8 +387,10 @@ export function ReceiptMailComposer({
                 </>
               ) : (
                 <>
-                  <Upload className="h-6 w-6 text-muted-foreground mb-2" />
-                  <p className="text-sm text-muted-foreground">사진을 클릭해서 업로드</p>
+                  <Upload className={`h-6 w-6 mb-2 ${dragging ? 'text-primary' : 'text-muted-foreground'}`} />
+                  <p className={`text-sm ${dragging ? 'text-primary font-medium' : 'text-muted-foreground'}`}>
+                    {dragging ? '여기에 놓으세요' : '클릭하거나 사진을 끌어다 놓으세요'}
+                  </p>
                 </>
               )}
             </div>
@@ -641,7 +686,7 @@ export function ReceiptMailComposer({
                 <div className="flex gap-2">
                   <span className="text-muted-foreground w-12 shrink-0">참조</span>
                   <span>
-                    {participants
+                    {sortedParticipants
                       .map((p) => p.name)
                       .filter(Boolean)
                       .join(', ')}
