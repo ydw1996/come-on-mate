@@ -44,7 +44,7 @@ interface Participant {
 
 type SendStatus =
   | { state: 'idle'; message: string }
-  | { state: 'sending'; message: string }
+  | { state: 'sending'; message: string; progress: number }
   | { state: 'success'; message: string }
   | { state: 'error'; message: string };
 
@@ -357,7 +357,7 @@ export function ReceiptMailComposer({
       return;
     }
 
-    setSendStatus({ state: 'sending', message: '메일을 발송하는 중입니다.' });
+    setSendStatus({ state: 'sending', message: '발송 준비 중...', progress: 0 });
 
     try {
       const response = await fetch('/api/morale/send', {
@@ -372,17 +372,36 @@ export function ReceiptMailComposer({
           smtpPassword: mailPassword,
         }),
       });
-      const payload = (await response.json()) as { error?: string; detail?: string };
 
-      if (!response.ok) {
-        setSendStatus({
-          state: 'error',
-          message: payload.detail ? `${payload.error ?? '메일 발송 실패'} (${payload.detail})` : payload.error ?? '메일 발송 실패',
-        });
-        return;
+      if (!response.body) throw new Error('스트림 없음');
+
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        const text = decoder.decode(value, { stream: true });
+        for (const line of text.split('\n')) {
+          if (!line.startsWith('data: ')) continue;
+          const data = JSON.parse(line.slice(6)) as {
+            progress?: number; message?: string; done?: boolean; error?: string; detail?: string;
+          };
+
+          if (data.error) {
+            setSendStatus({ state: 'error', message: data.detail ? `${data.error} (${data.detail})` : data.error });
+            return;
+          }
+          if (data.done) {
+            setSendStatus({ state: 'success', message: '메일을 발송했습니다.' });
+            return;
+          }
+          if (data.progress !== undefined) {
+            setSendStatus({ state: 'sending', message: data.message ?? '발송 중...', progress: data.progress });
+          }
+        }
       }
-
-      setSendStatus({ state: 'success', message: '메일을 발송했습니다.' });
     } catch {
       setSendStatus({ state: 'error', message: '메일 발송 요청에 실패했습니다.' });
     }
@@ -781,6 +800,17 @@ export function ReceiptMailComposer({
                 저장하지 않고 발송 요청에만 사용합니다.
               </p>
             </div>
+            {sendStatus.state === 'sending' && (
+              <div className="space-y-1.5">
+                <div className="h-2 w-full overflow-hidden rounded-full bg-muted">
+                  <div
+                    className="h-full rounded-full bg-primary transition-all duration-500 ease-out"
+                    style={{ width: `${sendStatus.progress}%` }}
+                  />
+                </div>
+                <p className="text-xs text-muted-foreground text-right">{sendStatus.progress}%</p>
+              </div>
+            )}
             <div className="flex flex-col gap-3 border-t pt-3 sm:flex-row sm:items-center sm:justify-between">
               <p
                 className={`text-sm ${

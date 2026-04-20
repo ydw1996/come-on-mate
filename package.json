@@ -27,7 +27,6 @@
     "@supabase/supabase-js": "^2.101.1",
     "@tanstack/react-query": "^5.96.0",
     "@tanstack/react-query-devtools": "^5.96.0",
-    "@types/nodemailer": "^8.0.0",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "googleapis": "^171.4.0",
@@ -52,6 +51,7 @@
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
     "@types/node": "^20",
+    "@types/nodemailer": "^8.0.0",
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "@types/xlsx": "^0.0.36",
