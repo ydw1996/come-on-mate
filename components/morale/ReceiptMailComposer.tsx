@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import Image from 'next/image';
-import { Upload, Loader2, X, Plus, ChevronDown } from 'lucide-react';
+import { Upload, Loader2, X, Plus, ChevronDown, Send } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -41,6 +41,12 @@ interface Participant {
   amount: number;
   menuItem?: string;
 }
+
+type SendStatus =
+  | { state: 'idle'; message: string }
+  | { state: 'sending'; message: string }
+  | { state: 'success'; message: string }
+  | { state: 'error'; message: string };
 
 function formatDate(dateStr: string) {
   if (!dateStr) return '';
@@ -205,6 +211,11 @@ export function ReceiptMailComposer({
     { name: '양다윗', position: '선임', amount: 0 },
   ]);
   const [headCount, setHeadCount] = useState(1);
+  const [sendStatus, setSendStatus] = useState<SendStatus>({
+    state: 'idle',
+    message: '메일 비밀번호는 발송할 때만 사용됩니다.',
+  });
+  const [mailPassword, setMailPassword] = useState('');
 
   // 비카페 유형: 인원수·총액 변경 시 금액 자동 계산
   useEffect(() => {
@@ -227,7 +238,6 @@ export function ReceiptMailComposer({
       }
       return adjusted;
     });
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [useType, totalAmount, headCount]);
 
   const sortedParticipants = [...participants].sort((a, b) => {
@@ -329,6 +339,53 @@ export function ReceiptMailComposer({
 
   function addParticipant() {
     setParticipants((prev) => [...prev, { name: '', position: '책임', amount: 0 }]);
+  }
+
+  async function handleSendMail() {
+    if (!place.trim()) {
+      setSendStatus({ state: 'error', message: '사용처를 입력해 주세요.' });
+      return;
+    }
+
+    if (totalDeduction <= 0) {
+      setSendStatus({ state: 'error', message: '차감 신청 금액을 입력해 주세요.' });
+      return;
+    }
+
+    if (!mailPassword) {
+      setSendStatus({ state: 'error', message: '메일 비밀번호를 입력해 주세요.' });
+      return;
+    }
+
+    setSendStatus({ state: 'sending', message: '메일을 발송하는 중입니다.' });
+
+    try {
+      const response = await fetch('/api/morale/send', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          subject,
+          body: emailBody,
+          receiptUrl,
+          participants: sortedParticipants,
+          totalAmount: totalDeduction,
+          smtpPassword: mailPassword,
+        }),
+      });
+      const payload = (await response.json()) as { error?: string; detail?: string };
+
+      if (!response.ok) {
+        setSendStatus({
+          state: 'error',
+          message: payload.detail ? `${payload.error ?? '메일 발송 실패'} (${payload.detail})` : payload.error ?? '메일 발송 실패',
+        });
+        return;
+      }
+
+      setSendStatus({ state: 'success', message: '메일을 발송했습니다.' });
+    } catch {
+      setSendStatus({ state: 'error', message: '메일 발송 요청에 실패했습니다.' });
+    }
   }
 
   const totalDeduction = participants.reduce((s, p) => s + p.amount, 0);
@@ -708,6 +765,47 @@ export function ReceiptMailComposer({
                 <Image src={receiptPreview} alt="영수증" fill className="object-cover" />
               </div>
             )}
+            <div className="space-y-1.5 border-t pt-3">
+              <Label className="text-xs" htmlFor="mail-password">
+                메일 비밀번호
+              </Label>
+              <Input
+                id="mail-password"
+                type="password"
+                autoComplete="current-password"
+                placeholder="로그인에 사용한 메일 비밀번호"
+                value={mailPassword}
+                onChange={(e) => setMailPassword(e.target.value)}
+              />
+              <p className="text-xs text-muted-foreground">
+                저장하지 않고 발송 요청에만 사용합니다.
+              </p>
+            </div>
+            <div className="flex flex-col gap-3 border-t pt-3 sm:flex-row sm:items-center sm:justify-between">
+              <p
+                className={`text-sm ${
+                  sendStatus.state === 'error'
+                    ? 'text-red-500'
+                    : sendStatus.state === 'success'
+                      ? 'text-emerald-600'
+                      : 'text-muted-foreground'
+                }`}
+              >
+                {sendStatus.message}
+              </p>
+              <Button
+                className="gap-2"
+                onClick={handleSendMail}
+                disabled={sendStatus.state === 'sending' || analyzing}
+              >
+                {sendStatus.state === 'sending' ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Send className="h-4 w-4" />
+                )}
+                {sendStatus.state === 'sending' ? '발송 중' : '메일 발송'}
+              </Button>
+            </div>
           </CardContent>
         </Card>
       </div>
